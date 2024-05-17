@@ -1,0 +1,243 @@
+//ImageJ macro written by Dominic Waithe. (c) 2017.
+//To be used on three channels of an image file.
+
+//Output:
+	//prints to log for each cell something like this: Cell Number: 	 270  	Foci Count CH1:	 7 	Foci Count CH2: 4 	 particles within distance 5
+	//outputs image
+
+//Parameters for the code
+
+	//DAPI channel. Used to find the areas.
+	dapi = 1;
+	//FOCI channel 02. Used to count the foci. Coloured green in output.
+	foci_ch1 = 2;
+	//FOCI channel 04. Used to count the foci. Coloured red in output
+	foci_ch2 = 5;
+	//Keep this consistent for your experiment. This is the sensitivity of the foci selection.
+	noise_tolerance_ch1 = 200; //A lower value will lead to more foci being detected.
+	noise_tolerance_ch2 = 200; //A lower value will lead to more foci being detected.
+	max_size_ch1 = 800; //This filters any foci which are likely blobs above a certain size in channel 1.
+	max_size_ch2 = 800; //This filters any foci which are likely blobs above a certain size in channel 2.
+	maximum_dist = 10 //pixel distance cutoff. Any points within distance between channels will be recorded.
+
+////Start of script. All being well you shouldn't have to change anything down here.
+	//Find unique id of an image
+	title = getTitle()
+	//run("Z Project...", "projection=[Max Intensity]");
+	setBatchMode(true);
+	//Make sure there are no selections
+	run("Select None");
+	run("Clear Results");
+	//Uncomment the next line if you want it to run faster but not display windows.
+	//setBatchMode(true);
+	
+	//Other measurements. Just makes sure they are set to default values.
+	run("Colors...", "foreground=black background=white selection=green");
+	run("Set Measurements...", "area mean standard modal min bounding integrated median redirect=None decimal=3");
+	
+	
+	//Goto the first slice, the dapi channel
+	setSlice(dapi);
+	//Duplicate that image
+	run("Duplicate...", " ");
+	
+	
+	//Set the auto threshold
+	run("8-bit");
+	
+	setAutoThreshold("Huang dark");
+	//set the background to be black
+	setOption("BlackBackground", false);
+	//commit to the threshold
+	run("Convert to Mask");
+	run("Fill Holes");
+	run("Watershed");
+	//Clear the roiManager before we add any entries.
+	roiManager("Reset");
+	//Analyse the dapi signal to count all the cells.
+	run("Analyze Particles...", "size=1000-Infinity pixel add");
+	roiCount = roiManager("Count");
+	close();
+	
+	
+	/////////////////FIRST FOCI CHANNEL POINT DETECTION//////////////////////////////
+	
+	selectWindow(title);
+	//Find the first foci image
+	setSlice(foci_ch1);
+	//Make a copy
+	run("Duplicate...", " ");
+	//blue gently for better detection
+	run("Gaussian Blur...", "sigma=0.80");
+	rename("foci_ch1");
+	//Find the maxima regions
+	run("Find Maxima...", "noise="+noise_tolerance_ch1+" output=[Maxima Within Tolerance]");
+	rename("maxima");
+	//Find the areas below a certain margin.
+	run("Analyze Particles...", "size=0-"+max_size_ch1+" pixel show=Masks display");
+	selectWindow("foci_ch1");
+	//Find the peak points
+	run("Find Maxima...", "noise="+noise_tolerance_ch1+" output=[Single Points]");
+	rename("points");
+	//Create image with the points that correspond to bein lower than a certain margin.
+	imageCalculator("AND create", "maxima","points");
+	//Locate this qualifying points
+	run("Find Maxima...", "noise=1 output=[Point Selection] light");
+	rename("points_ch1");
+	//Add to roi manager.
+	roiManager("Add");
+	
+	selectWindow("foci_ch1");
+	close();
+	selectWindow("points");
+	close();
+	selectWindow("maxima");
+	close();
+	selectWindow("Mask of maxima");
+	close();
+	
+	
+	
+	
+	/////////////////SECOND FOCI CHANNEL POINT DETECTION//////////////////////////////
+	
+	selectWindow(title);
+	//Find the first foci image
+	setSlice(foci_ch2);
+	//Make a copy
+	run("Duplicate...", " ");
+	//blue gently for better detection
+	run("Gaussian Blur...", "sigma=0.80");
+	rename("foci_ch2");
+	//Find the maxima regions
+	run("Find Maxima...", "noise="+noise_tolerance_ch2+" output=[Maxima Within Tolerance]");
+	rename("maxima");
+	//Find the areas below a certain margin.
+	run("Analyze Particles...", "size=0-"+max_size_ch2+" pixel show=Masks display");
+	selectWindow("foci_ch2");
+	//Find the peak points
+	run("Find Maxima...", "noise="+noise_tolerance_ch2+" output=[Single Points]");
+	rename("points");
+	//Create image with the points that correspond to bein lower than a certain margin.
+	imageCalculator("AND create", "maxima","points");
+	//Locate this qualifying points
+	run("Find Maxima...", "noise=1 output=[Single Points] light");
+	rename("points_ch2");
+	//Add to roi manager.
+	//roiManager("Add");
+	
+	selectWindow("foci_ch2");
+	close();
+	selectWindow("points");
+	close();
+	selectWindow("maxima");
+	close();
+	selectWindow("Mask of maxima");
+	close();
+	
+	
+	
+	
+	//Now we go back to the original
+	selectWindow(title);
+	//We change to the one which contains our foci.
+	
+	
+	//We print the title of the image.
+	print(title);
+	//We then interate through each region.
+	wid = getWidth()
+	hei = getHeight()
+	newImage("output", "RGB black", wid, hei, 1);
+	
+	//These arrays collectd all the red and all the green points for the data visualiation
+	red_all_x = newArray();
+	red_all_y = newArray();
+	grn_all_x = newArray();
+	grn_all_y = newArray();
+	
+	
+	for(i=0;i<roiCount;i++){
+		//Select a region.
+		selectWindow("points_ch1");
+		roiManager("Select",i);
+		//Find our many foci according to the the Find maxima algorithm
+		run("Find Maxima...", "noise=1 output=Count light");
+		run("Find Maxima...", "noise=1 output=[Point Selection] light");
+		count1 = getResult("Count",nResults-1);
+		xpoints_ch1 = newArray(); ypoints_ch1 = newArray();
+		if (count1 != 0){
+		xpoints_ch1 = newArray();ypoints_ch1 = newArray();
+		getSelectionCoordinates(xpoints_ch1, ypoints_ch1);
+		grn_all_x = Array.concat(grn_all_x, xpoints_ch1);
+		grn_all_y = Array.concat(grn_all_y, ypoints_ch1);
+		}
+		//Record the count in a variable
+		selectWindow("points_ch2");
+		roiManager("Select",i);
+		//Find our many foci according to the the Find maxima algorithm
+		run("Find Maxima...", "noise=1 output=Count light");
+		run("Find Maxima...", "noise=1 output=[Point Selection] light");
+		count2 = getResult("Count",nResults-1);
+		xpoints_ch2 = newArray(); ypoints_ch2 = newArray();
+		if (count1 != 0){
+		getSelectionCoordinates(xpoints_ch2, ypoints_ch2);
+		//Record the count in a variable
+		red_all_x = Array.concat(red_all_x, xpoints_ch2);
+		red_all_y = Array.concat(red_all_y, ypoints_ch2);
+		
+		}
+		//Measure the distance between the foci.
+		closer = 0;
+		for (it=0;it<xpoints_ch1.length;it++){
+			
+			
+			for (jt=0;jt<xpoints_ch2.length;jt++){
+			distx = (xpoints_ch1[it]-xpoints_ch2[jt]);
+			disty = (ypoints_ch1[it]-ypoints_ch2[jt]);
+			dist_overall = sqrt((distx*distx) + (disty*disty));
+			if (dist_overall < maximum_dist){
+				//Count the ones within a certain distance.
+				closer +=1;
+				jt = xpoints_ch2.length;
+			}
+			}
+		}
+		//Print the results of the counting.
+		print("Cell Number: \t",i+1," \tFoci Count CH1:\t",count1,"\tFoci Count CH2:\t",count2,"\t particles within distance\t",closer);
+		
+		
+		}
+	
+	//Data visualisation, done in batch rather then sequently for speed.
+	selectWindow("output");
+	run("Colors...", "foreground=red background=black selection=green");
+	for (i=0;i<red_all_x.length;i++){
+		makePoint(red_all_x[i],red_all_y[i]);
+		run("Draw", "slice");
+	}
+	
+	for (i=0;i<grn_all_x.length;i++){
+		if (getPixel(grn_all_x[i],grn_all_y[i]) == -65536){
+			
+			run("Colors...", "foreground=yellow background=black selection=green");
+			
+			}else{run("Colors...", "foreground=green background=black selection=green");}
+		makePoint(grn_all_x[i],grn_all_y[i]);
+		run("Draw", "slice");
+	}
+	run("Colors...", "foreground=white background=black selection=green");
+	for(i=0;i<roiCount;i++){
+		roiManager("Select",i);
+		roiManager("Draw");
+	}
+	
+	//Clear up a little bit.
+	selectWindow("points_ch1");
+	close();
+	selectWindow("points_ch2");
+	close();
+	selectWindow("Result of maxima");
+	close();
+	selectWindow("output");
+	setBatchMode(false);
